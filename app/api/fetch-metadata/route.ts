@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as cheerio from "cheerio";
+import path from "path";
+import fs from "fs";
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,68 +11,43 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "URL is required" }, { status: 400 });
     }
 
-    // Clean URL - remove trailing text from mobile sharing
-    let cleanUrl = url.trim();
-    const urlMatch = cleanUrl.match(/https?:\/\/[^\s]+/);
-    if (urlMatch) {
-      cleanUrl = urlMatch[0];
-    }
-
-    // Remove trailing slashes and query params that might cause issues
-    cleanUrl = cleanUrl.replace(/[?#].*$/, "").replace(/\/$/, "");
-
     let parsedUrl: URL;
     try {
-      parsedUrl = new URL(cleanUrl);
+      parsedUrl = new URL(url);
     } catch {
       return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
     }
 
-    console.log("🔗 Processing:", cleanUrl);
-
     // Normalize hostname
     let hostname = parsedUrl.hostname.replace("www.", "");
 
-    // Handle short domains (v.douyin.com -> douyin.com, m.youtube.com -> youtube.com)
-    if (hostname.startsWith("v.") || hostname.startsWith("m.")) {
-      const parts = hostname.split(".");
-      if (parts.length >= 3) {
-        hostname = parts.slice(-2).join(".");
-      }
+    // Special handling for short URLs
+    if (hostname.startsWith("v.")) {
+      const mainDomain = hostname.split(".").slice(-2).join(".");
+      hostname = mainDomain;
+      console.log(
+        "🔄 Normalized hostname from",
+        parsedUrl.hostname,
+        "to",
+        hostname
+      );
     }
 
-    // Special handling for youtu.be
-    if (hostname === "youtu.be") {
-      hostname = "youtube.com";
+    // Detect platform type
+    if (isSocialMedia(hostname)) {
+      return await handleSocialMedia(url, parsedUrl, hostname);
     }
 
-    console.log("🏷️  Platform:", hostname);
-
-    const platformKey = getPlatformKey(hostname);
-    const isSocial = isSocialMedia(hostname);
-
-    // Fetch metadata
-    const metadata = await fetchMetadata(
-      cleanUrl,
-      parsedUrl,
-      hostname,
-      isSocial
-    );
-
-    // Ensure we have a thumbnail
-    if (!metadata.thumbnail) {
-      metadata.thumbnail = await getThumbnail(parsedUrl, platformKey, hostname);
-    }
-
-    return NextResponse.json(metadata);
+    // Regular website handling
+    return await fetchRegularMetadata(url, parsedUrl, hostname);
   } catch (error) {
-    console.error("❌ Error:", error);
+    console.error("Metadata fetch error:", error);
 
     try {
       const { url } = await req.json();
       const parsedUrl = new URL(url);
       let hostname = parsedUrl.hostname.replace("www.", "");
-      if (hostname.startsWith("v.") || hostname.startsWith("m.")) {
+      if (hostname.startsWith("v.")) {
         hostname = hostname.split(".").slice(-2).join(".");
       }
       return createFallback(parsedUrl, hostname);
@@ -80,9 +57,9 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Check if social media
+// Detect if social media
 function isSocialMedia(hostname: string): boolean {
-  const platforms = [
+  const socialPlatforms = [
     "facebook.com",
     "fb.com",
     "instagram.com",
@@ -90,253 +67,194 @@ function isSocialMedia(hostname: string): boolean {
     "douyin.com",
     "xiaohongshu.com",
     "xhslink.com",
-    "youtube.com",
-    "youtu.be",
+    "xhs.cn",
     "twitter.com",
     "x.com",
     "reddit.com",
     "linkedin.com",
+    "pinterest.com",
   ];
-  return platforms.some((p) => hostname.includes(p));
+
+  return socialPlatforms.some((platform) => hostname.includes(platform));
 }
 
-// Main metadata fetcher
-async function fetchMetadata(
+// Social media handler
+async function handleSocialMedia(
   url: string,
   parsedUrl: URL,
-  hostname: string,
-  isSocial: boolean
+  hostname: string
 ) {
-  const userAgents = isSocial
-    ? [
-        "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
-        "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
-        "Twitterbot/1.0",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15",
-      ]
-    : [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      ];
+  console.log("🎭 Detected social media:", hostname);
 
-  let bestResult = { title: "", description: "", thumbnail: "" };
+  const userAgents = [
+    "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+    "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  ];
+
+  let bestResult = null;
 
   for (const userAgent of userAgents) {
     try {
-      console.log("🔍 Trying with:", userAgent.substring(0, 30) + "...");
-
       const response = await fetch(url, {
         headers: {
           "User-Agent": userAgent,
           Accept:
             "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
-          "Accept-Encoding": "gzip, deflate, br",
+          "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8",
           "Cache-Control": "no-cache",
           Referer: "https://www.google.com/",
         },
-        redirect: "follow",
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(12000),
       });
 
-      if (!response.ok) {
-        console.log("❌ HTTP", response.status);
-        continue;
+      if (response.ok) {
+        const html = await response.text();
+        const $ = cheerio.load(html);
+
+        const title = extractTitle($, parsedUrl, hostname);
+        const description = extractDescription($);
+        let thumbnail = extractThumbnail($, parsedUrl);
+
+        // Special Facebook image extraction
+        if (hostname.includes("facebook.com") && !thumbnail) {
+          thumbnail = extractFacebookImages($);
+        }
+
+        if (title && title !== parsedUrl.hostname) {
+          bestResult = { title, description, thumbnail };
+          console.log("✅ Found content with:", userAgent.substring(0, 50));
+
+          if (thumbnail) {
+            console.log("✅ Found thumbnail:", thumbnail.substring(0, 80));
+          }
+
+          if (thumbnail) break; // If we got thumbnail, stop trying
+        }
       }
-
-      const html = await response.text();
-      const $ = cheerio.load(html);
-
-      const title = extractTitle($, parsedUrl, hostname);
-      const description = extractDescription($);
-      let thumbnail = extractThumbnail($, parsedUrl);
-
-      // Platform-specific thumbnail extraction
-      if (!thumbnail && hostname.includes("facebook.com")) {
-        thumbnail = extractFacebookThumbnail($, html);
-      }
-
-      if (!thumbnail && hostname.includes("xiaohongshu.com")) {
-        thumbnail = extractXiaohongshuThumbnail($, html);
-      }
-
-      if (title && title.length > 10) {
-        bestResult = { title, description, thumbnail };
-        console.log("✅ Title:", title.substring(0, 50));
-        console.log("✅ Desc:", description.substring(0, 50));
-        console.log("✅ Thumb:", thumbnail ? "Found" : "None");
-
-        if (thumbnail) break; // Got everything
-      }
-    } catch (error) {
-      console.log("❌ Error:");
+    } catch (e) {
+      console.log("❌ Failed with user agent:", userAgent.substring(0, 40));
       continue;
     }
   }
 
   const platform = getPlatformName(hostname);
+  const platformKey = getPlatformKey(hostname);
 
-  return {
-    title: cleanText(bestResult.title, 200) || `${platform} Post`,
-    description: cleanText(bestResult.description, 500),
-    thumbnail: bestResult.thumbnail,
-    platform,
-  };
-}
-
-// Extract Facebook thumbnail
-function extractFacebookThumbnail($: cheerio.CheerioAPI, html: string): string {
-  // Method 1: Standard Open Graph
-  let img =
-    $('meta[property="og:image"]').attr("content") ||
-    $('meta[property="og:image:url"]').attr("content") ||
-    $('meta[property="og:image:secure_url"]').attr("content");
-
-  if (
-    img &&
-    img.startsWith("http") &&
-    !img.includes("static") &&
-    !img.includes("icon")
-  ) {
-    console.log("✅ FB OG Image");
-    return img;
-  }
-
-  // Method 2: Twitter Card
-  img =
-    $('meta[name="twitter:image"]').attr("content") ||
-    $('meta[property="twitter:image"]').attr("content");
-
-  if (img && img.startsWith("http")) {
-    console.log("✅ FB Twitter Image");
-    return img;
-  }
-
-  // Method 3: Look for scontent images in HTML (FB's CDN)
-  const scontentMatch = html.match(/https:\/\/scontent[^"'\s]+\.jpg/i);
-  if (scontentMatch) {
-    console.log("✅ FB CDN Image");
-    return scontentMatch[0];
-  }
-
-  // Method 4: JSON-LD structured data
-  const scripts = $('script[type="application/ld+json"]');
-  scripts.each((i, script) => {
-    try {
-      const data = JSON.parse($(script).html() || "{}");
-      if (data.image?.url) {
-        img = data.image.url;
-        return false; // break
-      }
-      if (typeof data.image === "string") {
-        img = data.image;
-        return false;
-      }
-    } catch {}
-  });
-
-  if (img && img.startsWith("http")) {
-    console.log("✅ FB JSON-LD Image");
-    return img;
-  }
-
-  console.log("❌ No FB image found");
-  return "";
-}
-
-// Extract Xiaohongshu thumbnail
-function extractXiaohongshuThumbnail(
-  $: cheerio.CheerioAPI,
-  html: string
-): string {
-  // Method 1: Open Graph
-  const img = $('meta[property="og:image"]').attr("content");
-  if (img && img.startsWith("http") && !img.includes("avatar")) {
-    return img;
-  }
-
-  // Method 2: Look for image URLs in HTML
-  const imgMatch = html.match(/https:\/\/[^"'\s]+\.(jpg|jpeg|png|webp)/gi);
-  if (imgMatch && imgMatch.length > 0) {
-    // Filter out avatars and small images
-    const validImg = imgMatch.find(
-      (url) =>
-        !url.includes("avatar") &&
-        !url.includes("icon") &&
-        (url.includes("1080x") || url.includes("note"))
-    );
-    if (validImg) return validImg;
-  }
-
-  return "";
-}
-
-// Get thumbnail with fallbacks
-async function getThumbnail(
-  parsedUrl: URL,
-  platformKey: string,
-  hostname: string
-): Promise<string> {
-  // Priority 1: Local logos for known platforms
-  const knownPlatforms = [
-    "facebook",
-    "instagram",
-    "tiktok",
-    "douyin",
-    "xiaohongshu",
-    "youtube",
-    "twitter",
-    "x",
-  ];
-
-  if (knownPlatforms.includes(platformKey)) {
-    console.log("✅ Using local logo:", platformKey);
-    return `/logos/${platformKey}.png`;
-  }
-
-  // Priority 2: Try multiple favicon sources
-  const faviconUrls = [
-    // Google's high-quality favicon service
-    `https://www.google.com/s2/favicons?domain=${parsedUrl.hostname}&sz=256`,
-    // DuckDuckGo icons (good quality)
-    `https://icons.duckduckgo.com/ip3/${parsedUrl.hostname}.ico`,
-    // Favicon.io
-    `https://favicons.githubusercontent.com/${parsedUrl.hostname}`,
-  ];
-
-  // Test first favicon URL
-  try {
-    const response = await fetch(faviconUrls[0], {
-      method: "HEAD",
-      signal: AbortSignal.timeout(3000),
+  if (bestResult) {
+    return NextResponse.json({
+      title: cleanText(bestResult.title, 200),
+      description: cleanText(bestResult.description, 500),
+      thumbnail:
+        bestResult.thumbnail || getLocalOrGeneratedThumbnail(platformKey),
+      platform,
     });
-    if (response.ok) {
-      console.log("✅ Using Google favicon");
-      return faviconUrls[0];
-    }
-  } catch {
-    console.log("⚠️ Favicon check failed, using anyway");
   }
 
-  return faviconUrls[0]; // Return Google's service as fallback
+  console.log("⚠️ Using fallback for", platform);
+
+  return NextResponse.json({
+    title: `${platform} Post`,
+    description: `Content from ${platform}. Click edit to add details manually.`,
+    thumbnail: getLocalOrGeneratedThumbnail(platformKey),
+    platform,
+    needsManualEdit: true,
+  });
 }
 
-// Standard extraction functions
+// Extract Facebook images
+function extractFacebookImages($: cheerio.CheerioAPI): string {
+  // Try multiple selectors for Facebook images
+  const selectors = [
+    'meta[property="og:image"]',
+    'meta[property="og:image:url"]',
+    'meta[property="og:image:secure_url"]',
+    "img[data-img-attaching-point]",
+    'img[class*="scaledImage"]',
+    'div[data-sigil="photo-image"] img',
+  ];
+
+  for (const selector of selectors) {
+    const content = $(selector).attr("content") || $(selector).attr("src");
+    if (content && content.startsWith("http")) {
+      console.log("✅ Found FB image with selector:", selector);
+      return content;
+    }
+  }
+
+  return "";
+}
+
+// Regular website handler
+async function fetchRegularMetadata(
+  url: string,
+  parsedUrl: URL,
+  hostname: string
+) {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch");
+    }
+
+    const html = await response.text();
+    const $ = cheerio.load(html);
+
+    const metadata = {
+      title: extractTitle($, parsedUrl, hostname),
+      description: extractDescription($),
+      thumbnail: extractThumbnail($, parsedUrl),
+      platform: getPlatformName(hostname),
+    };
+
+    metadata.title = cleanText(metadata.title, 200) || parsedUrl.hostname;
+    metadata.description = cleanText(metadata.description, 500);
+
+    if (!metadata.thumbnail) {
+      const platformKey = getPlatformKey(hostname);
+      metadata.thumbnail = getLocalOrGeneratedThumbnail(platformKey);
+    }
+
+    return NextResponse.json(metadata);
+  } catch (error) {
+    console.error("Regular fetch error:", error);
+    return createFallback(parsedUrl, hostname);
+  }
+}
+
+// Extract title
 function extractTitle(
   $: cheerio.CheerioAPI,
   url: URL,
   hostname: string
 ): string {
-  return (
+  let title = (
     $('meta[property="og:title"]').attr("content") ||
     $('meta[name="twitter:title"]').attr("content") ||
     $('meta[property="twitter:title"]').attr("content") ||
     $("title").text() ||
     $("h1").first().text() ||
-    getPlatformName(hostname)
+    ""
   ).trim();
+
+  // If title is empty or just hostname, try to get a better title
+  if (!title || title === url.hostname) {
+    const platform = getPlatformName(hostname);
+    title = `${platform} Post`;
+  }
+
+  return title;
 }
 
+// Extract description
 function extractDescription($: cheerio.CheerioAPI): string {
   return (
     $('meta[property="og:description"]').attr("content") ||
@@ -347,8 +265,9 @@ function extractDescription($: cheerio.CheerioAPI): string {
   ).trim();
 }
 
+// Extract thumbnail
 function extractThumbnail($: cheerio.CheerioAPI, parsedUrl: URL): string {
-  let thumb = (
+  let thumbnail = (
     $('meta[property="og:image"]').attr("content") ||
     $('meta[property="og:image:url"]').attr("content") ||
     $('meta[property="og:image:secure_url"]').attr("content") ||
@@ -357,20 +276,41 @@ function extractThumbnail($: cheerio.CheerioAPI, parsedUrl: URL): string {
     ""
   ).trim();
 
-  if (thumb && !thumb.startsWith("http")) {
+  if (thumbnail && !thumbnail.startsWith("http")) {
     try {
-      thumb = new URL(thumb, parsedUrl.origin).href;
+      thumbnail = new URL(thumbnail, parsedUrl.origin).href;
     } catch {
       return "";
     }
   }
 
-  return thumb;
+  return thumbnail;
 }
 
+// Get local or generated thumbnail
+function getLocalOrGeneratedThumbnail(platformKey: string): string {
+  // Check if local image exists
+  const publicPath = path.join(
+    process.cwd(),
+    "public",
+    "logos",
+    `${platformKey}.png`
+  );
+
+  if (fs.existsSync(publicPath)) {
+    console.log("✅ Using local logo for", platformKey);
+    return `/logos/${platformKey}.png`;
+  }
+
+  // Generate SVG placeholder
+  return generatePlatformPlaceholder(platformKey);
+}
+
+// Get platform key for file naming
 function getPlatformKey(hostname: string): string {
   const h = hostname.replace("www.", "");
-  const map: Record<string, string> = {
+
+  const keyMap: Record<string, string> = {
     "facebook.com": "facebook",
     "fb.com": "facebook",
     "instagram.com": "instagram",
@@ -379,16 +319,47 @@ function getPlatformKey(hostname: string): string {
     "xiaohongshu.com": "xiaohongshu",
     "xhslink.com": "xiaohongshu",
     "youtube.com": "youtube",
-    "youtu.be": "youtube",
     "twitter.com": "twitter",
     "x.com": "x",
   };
-  return map[h] || h.split(".")[0];
+
+  return keyMap[h] || h.split(".")[0];
 }
 
+// Generate platform placeholder
+function generatePlatformPlaceholder(platformKey: string): string {
+  const platformConfigs: Record<
+    string,
+    { name: string; colors: [string, string]; emoji: string }
+  > = {
+    facebook: { name: "Facebook", colors: ["1877F2", "0C63D4"], emoji: "📘" },
+    instagram: { name: "Instagram", colors: ["E4405F", "F77737"], emoji: "📷" },
+    tiktok: { name: "TikTok", colors: ["000000", "EE1D52"], emoji: "🎵" },
+    douyin: { name: "Douyin", colors: ["000000", "FE2C55"], emoji: "🎵" },
+    xiaohongshu: { name: "小红书", colors: ["FF2442", "FF6B6B"], emoji: "📕" },
+    youtube: { name: "YouTube", colors: ["FF0000", "CC0000"], emoji: "▶️" },
+    twitter: { name: "Twitter", colors: ["1DA1F2", "0C8BD9"], emoji: "🐦" },
+    x: { name: "X", colors: ["000000", "14171A"], emoji: "✖️" },
+  };
+
+  const config = platformConfigs[platformKey] || {
+    name: platformKey.charAt(0).toUpperCase() + platformKey.slice(1),
+    colors: ["4F46E5", "6366F1"],
+    emoji: "🔖",
+  };
+
+  const [color1, color2] = config.colors;
+  const displayText = encodeURIComponent(config.name);
+  const emoji = encodeURIComponent(config.emoji);
+
+  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='225'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23${color1};stop-opacity:1' /%3E%3Cstop offset='100%25' style='stop-color:%23${color2};stop-opacity:1' /%3E%3C/linearGradient%3E%3C/defs%3E%3Crect fill='url(%23g)' width='400' height='225'/%3E%3Ctext fill='white' font-family='system-ui' font-size='56' x='50%25' y='40%25' text-anchor='middle' dominant-baseline='middle'%3E${emoji}%3C/text%3E%3Ctext fill='white' font-family='system-ui' font-weight='600' font-size='28' x='50%25' y='65%25' text-anchor='middle' dominant-baseline='middle'%3E${displayText}%3C/text%3E%3C/svg%3E`;
+}
+
+// Get platform name
 function getPlatformName(hostname: string): string {
   const h = hostname.replace("www.", "");
-  const map: Record<string, string> = {
+
+  const platforms: Record<string, string> = {
     "facebook.com": "Facebook",
     "fb.com": "Facebook",
     "instagram.com": "Instagram",
@@ -400,25 +371,31 @@ function getPlatformName(hostname: string): string {
     "youtu.be": "YouTube",
     "twitter.com": "Twitter",
     "x.com": "X",
+    "github.com": "GitHub",
+    "reddit.com": "Reddit",
   };
+
   return (
-    map[h] || h.split(".")[0].charAt(0).toUpperCase() + h.split(".")[0].slice(1)
+    platforms[h] ||
+    h.split(".")[0].charAt(0).toUpperCase() + h.split(".")[0].slice(1)
   );
 }
 
-async function createFallback(parsedUrl: URL, hostname: string) {
+// Fallback
+function createFallback(parsedUrl: URL, hostname: string) {
   const platform = getPlatformName(hostname);
   const platformKey = getPlatformKey(hostname);
-  const thumbnail = await getThumbnail(parsedUrl, platformKey, hostname);
 
   return NextResponse.json({
     title: platform,
     description: "",
-    thumbnail,
+    thumbnail: getLocalOrGeneratedThumbnail(platformKey),
     platform,
+    needsManualEdit: true,
   });
 }
 
+// Clean text
 function cleanText(text: string, maxLength: number): string {
   if (!text) return "";
   text = text.replace(/\s+/g, " ").trim();

@@ -115,11 +115,20 @@ export default function BookmarkCard({ bookmark, onDelete }: BookmarkCardProps) 
                         <img
                             src={bookmark.thumbnail}
                             alt={bookmark.title || 'Bookmark'}
+                            // 🔥 关键修复 1：防止 Facebook 检测来源域名，绕过防盗链
+                            referrerPolicy="no-referrer"
                             className="w-full h-48 object-cover group-hover:scale-110 transition-transform duration-500"
                             onError={(e) => {
-                                // 如果图片加载失败，显示占位图
                                 const target = e.currentTarget;
-                                target.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='225'%3E%3Crect fill='%2394a3b8' width='400' height='225'/%3E%3Ctext fill='white' font-family='Arial' font-size='18' x='50%25' y='50%25' text-anchor='middle' dominant-baseline='middle'%3ENo Image%3C/text%3E%3C/svg%3E`;
+                                // 🔥 关键修复 2：如果 FB 动态图加载失败，优先退回到本地 Logo
+                                if (bookmark.platform?.toLowerCase() === 'facebook') {
+                                    target.src = '/logos/facebook.png';
+                                } else {
+                                    // 如果不是 FB 或者本地 Logo 也挂了，再显示 SVG 占位图
+                                    target.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='225'%3E%3Crect fill='%2394a3b8' width='400' height='225'/%3E%3Ctext fill='white' font-family='Arial' font-size='18' x='50%25' y='50%25' text-anchor='middle' dominant-baseline='middle'%3ENo Image%3C/text%3E%3C/svg%3E`;
+                                }
+                                // 防止死循环（如果本地 logo 也不存在）
+                                target.onerror = null;
                             }}
                         />
                     ) : (
