@@ -101,3 +101,50 @@ export async function DELETE(req: NextRequest) {
     );
   }
 }
+
+// PATCH - 更新书签
+export async function PATCH(req: NextRequest) {
+  try {
+    const { userId } = await auth();
+    
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const { id, title, description, category, tags } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID required' }, { status: 400 });
+    }
+
+    // 确保只能编辑自己的书签
+    const bookmark = await prisma.bookmark.findUnique({
+      where: { id },
+    });
+
+    if (!bookmark || bookmark.userId !== userId) {
+      return NextResponse.json({ error: 'Bookmark not found' }, { status: 404 });
+    }
+
+    // 更新书签
+    const updatedBookmark = await prisma.bookmark.update({
+      where: { id },
+      data: {
+        title,
+        description,
+        category,
+        tags: tags || [],
+      },
+    });
+
+    return NextResponse.json(updatedBookmark);
+  } catch (error) {
+    console.error('Update bookmark error:', error);
+    return NextResponse.json(
+      { error: 'Failed to update bookmark' },
+      { status: 500 }
+    );
+  }
+}
+
