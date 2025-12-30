@@ -32,29 +32,35 @@ export async function POST(req: NextRequest) {
     const { userId } = await auth();
 
     if (!userId) {
+      console.error("No userId found");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await req.json();
+    console.log("Creating bookmark for user:", userId);
 
     const newBookmark = await prisma.bookmark.create({
       data: {
         userId,
         url: body.url,
-        title: body.title,
-        description: body.description,
-        thumbnail: body.thumbnail,
-        category: body.category,
+        title: body.title || "Untitled",
+        description: body.description || "",
+        thumbnail: body.thumbnail || "",
+        category: body.category || "Other",
         tags: body.tags || [],
-        platform: body.platform,
+        platform: body.platform || "Web",
       },
     });
 
+    console.log("Bookmark created successfully:", newBookmark.id);
     return NextResponse.json(newBookmark);
   } catch (error) {
     console.error("Create bookmark error:", error);
     return NextResponse.json(
-      { error: "Failed to create bookmark" },
+      {
+        error:
+          error instanceof Error ? error.message : "Failed to create bookmark",
+      },
       { status: 500 }
     );
   }
@@ -76,7 +82,6 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "ID required" }, { status: 400 });
     }
 
-    // 确保只能删除自己的书签
     const bookmark = await prisma.bookmark.findUnique({
       where: { id },
     });
@@ -106,33 +111,35 @@ export async function DELETE(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const { userId } = await auth();
-    
+
     if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await req.json();
-    const { id, title, description, category, tags } = body;
+    const { id, title, description, thumbnail, category, tags } = body;
 
     if (!id) {
-      return NextResponse.json({ error: 'ID required' }, { status: 400 });
+      return NextResponse.json({ error: "ID required" }, { status: 400 });
     }
 
-    // 确保只能编辑自己的书签
     const bookmark = await prisma.bookmark.findUnique({
       where: { id },
     });
 
     if (!bookmark || bookmark.userId !== userId) {
-      return NextResponse.json({ error: 'Bookmark not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: "Bookmark not found" },
+        { status: 404 }
+      );
     }
 
-    // 更新书签
     const updatedBookmark = await prisma.bookmark.update({
       where: { id },
       data: {
         title,
         description,
+        thumbnail,
         category,
         tags: tags || [],
       },
@@ -140,11 +147,10 @@ export async function PATCH(req: NextRequest) {
 
     return NextResponse.json(updatedBookmark);
   } catch (error) {
-    console.error('Update bookmark error:', error);
+    console.error("Update bookmark error:", error);
     return NextResponse.json(
-      { error: 'Failed to update bookmark' },
+      { error: "Failed to update bookmark" },
       { status: 500 }
     );
   }
 }
-
