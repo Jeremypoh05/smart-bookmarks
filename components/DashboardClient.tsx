@@ -95,40 +95,57 @@ export default function DashboardClient() {
             {/* Header */}
             <header className="bg-white/80 backdrop-blur-lg border-b border-slate-200 sticky top-0 z-50 shadow-sm">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                            <div className="bg-gradient-to-br from-blue-600 to-indigo-600 p-2 rounded-xl shadow-lg">
-                                <Sparkles className="w-6 h-6 text-white" />
+                    <div className="flex items-center justify-between gap-2">
+                        {/* 左侧：Logo 和 标题 */}
+                        <div className="flex items-center min-w-0 space-x-2">
+                            <div className="bg-gradient-to-br from-blue-600 to-indigo-600 p-1.5 sm:p-2 rounded-lg shadow-md flex-shrink-0">
+                                <Sparkles className="w-5 h-5 text-white" />
                             </div>
-                            <div>
-                                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                            <div className="min-w-0">
+                                <h1 className="text-lg sm:text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent truncate">
                                     Smart Bookmarks
                                 </h1>
-                                <p className="text-sm text-slate-600">
-                                    Welcome back, {user?.firstName || user?.username || 'User'}!
+                                {/* 手机端隐藏欢迎语或缩短它 */}
+                                <p className="text-xs text-slate-500 truncate">
+                                    Welcome back, {user?.firstName || 'User'}!
                                 </p>
                             </div>
                         </div>
 
-                        <div className="flex items-center space-x-3">
+                        <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
                             {/* 🔥 NEW: Import/Export 按钮 */}
                             <button
                                 onClick={() => setShowImportExportModal(true)}
-                                className="bg-white text-slate-700 px-4 py-2.5 rounded-xl font-medium hover:bg-slate-100 transition-all duration-200 flex items-center space-x-2 border border-slate-200"
+                                className="bg-white text-slate-700 p-2 sm:px-4 sm:py-2.5 rounded-xl border border-slate-200 shadow-sm hover:bg-slate-50 transition-all flex items-center justify-center group"
                             >
-                                <Download className="w-4 h-4" />
-                                <Upload className="w-4 h-4 -ml-1" />
-                                <span className="hidden sm:inline">Import/Export</span>
+                                {/* 使用 flex 和 gap 确保图标不重叠 */}
+                                <div className="flex items-center gap-0.5 sm:gap-1">
+                                    <Download className="w-4 h-4 text-slate-500 group-hover:text-blue-600 transition-colors" />
+                                    <Upload className="w-4 h-4 text-slate-500 group-hover:text-indigo-600 transition-colors" />
+                                </div>
+                                {/* 只有在较大屏幕才显示文字，避免挤压按钮区域 */}
+                                <span className="hidden lg:inline ml-2 text-sm font-medium">Import/Export</span>
                             </button>
 
                             <button
                                 onClick={() => setShowModal(true)}
-                                className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2.5 rounded-xl font-medium hover:shadow-lg hover:scale-105 transition-all duration-200 flex items-center space-x-2"
+                                className="bg-blue-600 text-white p-2 flex sm:px-4 sm:py-2.5 rounded-xl shadow-md hover:bg-blue-700 transition-all active:scale-95"
                             >
-                                <Plus className="w-5 h-5" />
-                                <span className="hidden sm:inline">Add Bookmark</span>
+                                <Plus className="w-6 h-6 sm:w-5 sm:h-5" />
+                                <span className="hidden md:inline ml-1.5 font-medium">Add Bookmark</span>
                             </button>
-                            <UserButton afterSignOutUrl="/" />
+                            {/* 用户按钮 */}
+                            <div className="flex-shrink-0 mt-2">
+                                <UserButton
+                                    afterSignOutUrl="/"
+                                    appearance={{
+                                        elements: {
+                                            userButtonAvatarBox: "w-9 h-9 sm:w-10 sm:h-10", // 调整头像框的大小
+                                            userButtonTrigger: "focus:shadow-none",        // 可选：移除点击时的阴影
+                                        }
+                                    }}
+                                />
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -154,8 +171,8 @@ export default function DashboardClient() {
                                 onClick={() => setViewMode('grid')}
                                 aria-label="Grid View"
                                 className={`p-3 rounded-xl transition-all ${viewMode === 'grid'
-                                        ? 'bg-blue-600 text-white shadow-lg'
-                                        : 'bg-white text-slate-600 hover:bg-slate-100'
+                                    ? 'bg-blue-600 text-white shadow-lg'
+                                    : 'bg-white text-slate-600 hover:bg-slate-100'
                                     }`}
                             >
                                 <Grid className="w-5 h-5" />
@@ -164,8 +181,8 @@ export default function DashboardClient() {
                                 onClick={() => setViewMode('list')}
                                 aria-label="List View"
                                 className={`p-3 rounded-xl transition-all ${viewMode === 'list'
-                                        ? 'bg-blue-600 text-white shadow-lg'
-                                        : 'bg-white text-slate-600 hover:bg-slate-100'
+                                    ? 'bg-blue-600 text-white shadow-lg'
+                                    : 'bg-white text-slate-600 hover:bg-slate-100'
                                     }`}
                             >
                                 <List className="w-5 h-5" />
@@ -173,14 +190,14 @@ export default function DashboardClient() {
                         </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide sm:flex-wrap sm:overflow-visible sm:pb-0 sm:mx-0 sm:px-0 gap-2">
                         {categories.map((category) => (
                             <button
                                 key={category}
                                 onClick={() => setSelectedCategory(category)}
-                                className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${selectedCategory === category
-                                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg scale-105'
-                                        : 'bg-white text-slate-700 hover:bg-slate-100 hover:scale-105'
+                                className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-all flex-shrink-0 ${selectedCategory === category
+                                    ? 'bg-blue-600 text-white shadow-md'
+                                    : 'bg-white text-slate-600 border border-slate-100 hover:bg-slate-50'
                                     }`}
                             >
                                 {category}
@@ -190,8 +207,8 @@ export default function DashboardClient() {
                 </div>
 
                 {/* Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                    <div className="bg-white rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-8">
+                    <div className="bg-white rounded-xl p-3 sm:p-5 shadow-sm hover:shadow-md transition-shadow">
                         <p className="text-sm text-slate-600 mb-1">Total Bookmarks</p>
                         <p className="text-3xl font-bold text-slate-900">{stats.total}</p>
                     </div>
@@ -215,8 +232,8 @@ export default function DashboardClient() {
                 {loading ? (
                     <div
                         className={`grid gap-6 ${viewMode === 'grid'
-                                ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
-                                : 'grid-cols-1'
+                            ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+                            : 'grid-cols-1'
                             }`}
                     >
                         {[...Array(6)].map((_, i) => (
@@ -255,8 +272,8 @@ export default function DashboardClient() {
                 ) : (
                     <div
                         className={`grid gap-6 ${viewMode === 'grid'
-                                ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
-                                : 'grid-cols-1'
+                            ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+                            : 'grid-cols-1'
                             }`}
                     >
                         {filteredBookmarks.map((bookmark) => (

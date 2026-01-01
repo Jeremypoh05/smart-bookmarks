@@ -24,3 +24,19 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* 默认样式：手机端（较小） */
+.cl-userButtonAvatarBox {
+  width: 2.3rem !important;
+  /* 32px */
+  height: 2.3rem !important;
+}
+
+/* 电脑端样式：宽度大于 640px 时变大 */
+@media (min-width: 640px) {
+  .cl-userButtonAvatarBox {
+    width: 2.5rem !important;
+    /* 40px */
+    height: 2.5rem !important;
+  }
+}
