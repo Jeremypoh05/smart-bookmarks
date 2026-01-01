@@ -1,9 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Save, Loader2, Tag, Sparkles, Upload, Image as ImageIcon } from 'lucide-react';
-import { UploadButton } from "@uploadthing/react";
-import type { OurFileRouter } from "@/app/api/uploadthing/core";
+import { X, Save, Loader2, Tag, Sparkles, Upload } from 'lucide-react';
+import imageCompression from 'browser-image-compression';
 
 interface EditBookmarkModalProps {
     bookmark: {
@@ -26,6 +25,7 @@ export default function EditBookmarkModal({ bookmark, onClose, onSuccess }: Edit
     const [category, setCategory] = useState(bookmark.category || 'Other');
     const [tags, setTags] = useState(bookmark.tags.join(', '));
     const [isLoading, setIsLoading] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
 
     const categories = [
         'Learning/Tech',
@@ -35,6 +35,61 @@ export default function EditBookmarkModal({ bookmark, onClose, onSuccess }: Edit
         'Food/Travel',
         'Other'
     ];
+
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // Check file type
+        if (!file.type.startsWith('image/')) {
+            alert('请选择图片文件！');
+            return;
+        }
+
+        setIsUploading(true);
+
+        try {
+            console.log('🖼️  Original image:', {
+                name: file.name,
+                size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
+                type: file.type
+            });
+
+            // 🔥 压缩配置
+            const options = {
+                maxSizeMB: 1,              // 最大 1MB
+                maxWidthOrHeight: 1024,     // 最大宽/高 1024px
+                useWebWorker: true,
+                fileType: 'image/jpeg',     // 统一转换为 JPEG
+            };
+
+            // 压缩图片
+            const compressedFile = await imageCompression(file, options);
+
+            console.log('✅ Compressed image:', {
+                size: (compressedFile.size / 1024).toFixed(2) + ' KB',
+                reduction: ((1 - compressedFile.size / file.size) * 100).toFixed(1) + '%'
+            });
+
+            // 转换为 Base64
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64 = reader.result as string;
+                setThumbnail(base64);
+                setIsUploading(false);
+            };
+            reader.onerror = () => {
+                alert('读取文件失败！');
+                setIsUploading(false);
+            };
+            reader.readAsDataURL(compressedFile);
+
+        } catch (error) {
+            console.error('❌ Compression error:', error);
+            alert('图片压缩失败，请重试！');
+            setIsUploading(false);
+        }
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -95,36 +150,54 @@ export default function EditBookmarkModal({ bookmark, onClose, onSuccess }: Edit
                                 <img
                                     src={thumbnail}
                                     alt="Thumbnail"
-                                    className="w-full h-48 object-cover rounded-xl"
+                                    className="w-full h-48 object-cover rounded-xl border-2 border-slate-200"
                                 />
-                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
+                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center gap-3">
+                                    <label className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors cursor-pointer">
+                                        <Upload className="w-4 h-4 inline mr-2" />
+                                        Change
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={handleImageUpload}
+                                            className="hidden"
+                                            disabled={isUploading}
+                                        />
+                                    </label>
                                     <button
                                         type="button"
                                         onClick={() => setThumbnail('')}
                                         className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors"
                                     >
-                                        Remove Image
+                                        Remove
                                     </button>
                                 </div>
                             </div>
                         ) : (
                             <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:border-blue-500 transition-colors">
-                                <UploadButton<OurFileRouter, "imageUploader">
-                                    endpoint="imageUploader"
-                                    onClientUploadComplete={(res) => {
-                                        if (res && res[0]) {
-                                            setThumbnail(res[0].url);
-                                            alert('Image uploaded successfully!');
-                                        }
-                                    }}
-                                    onUploadError={(error: Error) => {
-                                        alert(`Upload failed: ${error.message}`);
-                                    }}
-                                    appearance={{
-                                        button: "bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2 rounded-lg hover:shadow-lg transition-all",
-                                        allowedContent: "text-slate-600 text-sm mt-2"
-                                    }}
-                                />
+                                <Upload className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+                                <label className="cursor-pointer">
+                                    <span className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2 rounded-lg hover:shadow-lg transition-all inline-block">
+                                        {isUploading ? 'Uploading...' : 'Upload Image'}
+                                    </span>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={handleImageUpload}
+                                        className="hidden"
+                                        disabled={isUploading}
+                                    />
+                                </label>
+                                <p className="text-sm text-slate-500 mt-2">
+                                    PNG, JPG, GIF up to 10MB (will be compressed)
+                                </p>
+                            </div>
+                        )}
+
+                        {isUploading && (
+                            <div className="mt-2 flex items-center justify-center space-x-2 text-blue-600">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span className="text-sm">Compressing image...</span>
                             </div>
                         )}
                     </div>
@@ -216,7 +289,7 @@ export default function EditBookmarkModal({ bookmark, onClose, onSuccess }: Edit
                         </button>
                         <button
                             type="submit"
-                            disabled={isLoading || !title.trim()}
+                            disabled={isLoading || !title.trim() || isUploading}
                             className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-3 rounded-xl font-medium hover:shadow-lg hover:scale-105 transition-all disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center space-x-2"
                         >
                             {isLoading ? (
