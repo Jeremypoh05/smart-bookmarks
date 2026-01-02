@@ -22,6 +22,12 @@ interface Bookmark {
     userId: string;
 }
 
+interface SharedData {
+    url: string;
+    title?: string;
+    text?: string;
+}
+
 export default function DashboardClient() {
     const { user } = useUser();
     const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
@@ -32,6 +38,7 @@ export default function DashboardClient() {
     const [selectedCategory, setSelectedCategory] = useState('全部');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const searchParams = useSearchParams();
+    const [sharedData, setSharedData] = useState<SharedData | null>(null);
 
     // 🔥 选择模式相关
     const [selectionMode, setSelectionMode] = useState(false);
@@ -71,26 +78,39 @@ export default function DashboardClient() {
 
     // 🔥 NEW: 处理从 Share Sheet 传来的数据
     useEffect(() => {
-        const handleSharedContent = async () => {
-            const isShared = searchParams.get('share') === 'true';
+        const handleSharedContent = () => {
+            const isShared = searchParams.get('share') === 'true' || searchParams.has('url') || searchParams.has('text');
             const sharedUrl = searchParams.get('url');
             const sharedTitle = searchParams.get('title');
             const sharedText = searchParams.get('text');
 
-            if (isShared && sharedUrl) {
-                // 自动打开添加书签的 modal，并预填数据
-                setShowModal(true);
+            if (isShared) {
+                // --- 核心逻辑：从 text 或 url 中榨取真正的 URL ---
+                let finalUrl = '';
 
-                // 可以创建一个 state 来存储预填数据
-                // 然后传给 AddBookmarkModal
-                console.log('Shared content:', {
-                    url: sharedUrl,
-                    title: sharedTitle,
-                    text: sharedText
-                });
+                // 1. 尝试从 url 参数取
+                if (sharedUrl && sharedUrl.startsWith('http')) {
+                    finalUrl = sharedUrl;
+                }
+                // 2. 如果 url 参数没拿到，从 text 参数里正则匹配出 http 链接
+                else if (sharedText) {
+                    const urlRegex = /(https?:\/\/[^\s]+)/g;
+                    const match = sharedText.match(urlRegex);
+                    finalUrl = match ? match[0] : '';
+                }
 
-                // 清理 URL 参数
-                window.history.replaceState({}, '', '/dashboard');
+                if (finalUrl) {
+                    setSharedData({
+                        url: finalUrl,
+                        title: sharedTitle || '',
+                        text: sharedText || '',
+                    });
+                    setShowModal(true); // 自动弹出窗口
+                }
+
+                // 清理掉 URL 里的参数，保持地址栏干净，防止刷新页面又弹窗
+                const newUrl = window.location.pathname;
+                window.history.replaceState({}, '', newUrl);
             }
         };
 
