@@ -7,6 +7,7 @@ import { X, Download, Upload, FileJson, FileSpreadsheet, FileText, AlertCircle, 
 interface ImportExportModalProps {
     onClose: () => void;
     onImportSuccess: () => void;
+    selectedBookmarkIds?: string[]; // 🔥 支持选择性导出
 }
 
 interface ImportResult {
@@ -16,11 +17,14 @@ interface ImportResult {
     errors?: string[];
 }
 
-export default function ImportExportModal({ onClose, onImportSuccess }: ImportExportModalProps) {
+export default function ImportExportModal({ onClose, onImportSuccess, selectedBookmarkIds }: ImportExportModalProps) {
     const [importing, setImporting] = useState(false);
     const [exporting, setExporting] = useState(false);
     const [importResult, setImportResult] = useState<ImportResult | null>(null);
     const [error, setError] = useState('');
+
+    // 🔥 检查是否是选择性导出
+    const isSelectiveExport = selectedBookmarkIds && selectedBookmarkIds.length > 0;
 
     // 导出书签
     const handleExport = async (format: string) => {
@@ -28,16 +32,34 @@ export default function ImportExportModal({ onClose, onImportSuccess }: ImportEx
             setExporting(true);
             setError('');
 
-            const response = await fetch(`/api/bookmarks/export?format=${format}`);
+            // 🔥 如果是选择性导出，发送选中的 ID
+            let url = `/api/bookmarks/export?format=${format}`;
+            let options: RequestInit = {};
+
+            if (isSelectiveExport) {
+                url = `/api/bookmarks/export`;
+                options = {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        format,
+                        bookmarkIds: selectedBookmarkIds,
+                    }),
+                };
+            }
+
+            const response = await fetch(url, options);
 
             if (!response.ok) {
                 throw new Error('Export failed');
             }
 
             const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
+            const downloadUrl = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url;
+            a.href = downloadUrl;
 
             const contentDisposition = response.headers.get('Content-Disposition');
             const filename = contentDisposition
@@ -48,7 +70,7 @@ export default function ImportExportModal({ onClose, onImportSuccess }: ImportEx
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
+            window.URL.revokeObjectURL(downloadUrl);
         } catch (err) {
             setError('Failed to export bookmarks');
             console.error(err);
@@ -105,8 +127,15 @@ export default function ImportExportModal({ onClose, onImportSuccess }: ImportEx
                 {/* Header */}
                 <div className="flex items-center justify-between p-6 border-b border-slate-200">
                     <div>
-                        <h2 className="text-2xl font-bold text-slate-900">Import & Export</h2>
-                        <p className="text-sm text-slate-600 mt-1">Backup or transfer your bookmarks</p>
+                        <h2 className="text-2xl font-bold text-slate-900">
+                            {isSelectiveExport ? 'Export Selected Bookmarks' : 'Import & Export'}
+                        </h2>
+                        <p className="text-sm text-slate-600 mt-1">
+                            {isSelectiveExport
+                                ? `Export ${selectedBookmarkIds?.length} selected bookmark${selectedBookmarkIds?.length !== 1 ? 's' : ''}`
+                                : 'Backup or transfer your bookmarks'
+                            }
+                        </p>
                     </div>
                     <button
                         onClick={onClose}
@@ -147,7 +176,7 @@ export default function ImportExportModal({ onClose, onImportSuccess }: ImportEx
                         </div>
                     )}
 
-                    <div className="grid md:grid-cols-2 gap-6">
+                    <div className={`grid ${isSelectiveExport ? 'grid-cols-1' : 'md:grid-cols-2'} gap-6`}>
                         {/* 导出部分 */}
                         <div className="space-y-4">
                             <div className="flex items-center gap-3 mb-4">
@@ -218,78 +247,80 @@ export default function ImportExportModal({ onClose, onImportSuccess }: ImportEx
                             )}
                         </div>
 
-                        {/* 导入部分 */}
-                        <div className="space-y-4">
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="p-2 bg-green-100 rounded-lg">
-                                    <Upload className="text-green-600" size={20} />
+                        {/* 导入部分 - 只在非选择模式显示 */}
+                        {!isSelectiveExport && (
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="p-2 bg-green-100 rounded-lg">
+                                        <Upload className="text-green-600" size={20} />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold text-slate-900">Import</h3>
+                                        <p className="text-xs text-slate-600">Upload bookmarks file</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h3 className="font-semibold text-slate-900">Import</h3>
-                                    <p className="text-xs text-slate-600">Upload bookmarks file</p>
+
+                                <div className="space-y-2">
+                                    <label className="block">
+                                        <input
+                                            type="file"
+                                            accept=".json"
+                                            onChange={(e) => handleImport(e, 'json')}
+                                            disabled={importing}
+                                            className="hidden"
+                                        />
+                                        <div className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer text-left">
+                                            <FileJson className="text-purple-600 flex-shrink-0" size={18} />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-medium text-slate-900 text-sm">Import JSON</p>
+                                                <p className="text-xs text-slate-600 truncate">From this app</p>
+                                            </div>
+                                        </div>
+                                    </label>
+
+                                    <label className="block">
+                                        <input
+                                            type="file"
+                                            accept=".csv"
+                                            onChange={(e) => handleImport(e, 'csv')}
+                                            disabled={importing}
+                                            className="hidden"
+                                        />
+                                        <div className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer text-left">
+                                            <FileSpreadsheet className="text-green-600 flex-shrink-0" size={18} />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-medium text-slate-900 text-sm">Import CSV</p>
+                                                <p className="text-xs text-slate-600 truncate">From spreadsheets</p>
+                                            </div>
+                                        </div>
+                                    </label>
+
+                                    <label className="block">
+                                        <input
+                                            type="file"
+                                            accept=".html"
+                                            onChange={(e) => handleImport(e, 'html')}
+                                            disabled={importing}
+                                            className="hidden"
+                                        />
+                                        <div className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer text-left">
+                                            <FileText className="text-orange-600 flex-shrink-0" size={18} />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-medium text-slate-900 text-sm">Import HTML</p>
+                                                <p className="text-xs text-slate-600 truncate">From browsers</p>
+                                            </div>
+                                        </div>
+                                    </label>
                                 </div>
+
+                                {importing && (
+                                    <div className="flex items-center justify-center gap-2 py-2 text-green-600">
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        <span className="text-sm">Importing...</span>
+                                    </div>
+                                )}
                             </div>
-
-                            <div className="space-y-2">
-                                <label className="block">
-                                    <input
-                                        type="file"
-                                        accept=".json"
-                                        onChange={(e) => handleImport(e, 'json')}
-                                        disabled={importing}
-                                        className="hidden"
-                                    />
-                                    <div className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer text-left">
-                                        <FileJson className="text-purple-600 flex-shrink-0" size={18} />
-                                        <div className="flex-1 min-w-0">
-                                            <p className="font-medium text-slate-900 text-sm">Import JSON</p>
-                                            <p className="text-xs text-slate-600 truncate">From this app</p>
-                                        </div>
-                                    </div>
-                                </label>
-
-                                <label className="block">
-                                    <input
-                                        type="file"
-                                        accept=".csv"
-                                        onChange={(e) => handleImport(e, 'csv')}
-                                        disabled={importing}
-                                        className="hidden"
-                                    />
-                                    <div className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer text-left">
-                                        <FileSpreadsheet className="text-green-600 flex-shrink-0" size={18} />
-                                        <div className="flex-1 min-w-0">
-                                            <p className="font-medium text-slate-900 text-sm">Import CSV</p>
-                                            <p className="text-xs text-slate-600 truncate">From spreadsheets</p>
-                                        </div>
-                                    </div>
-                                </label>
-
-                                <label className="block">
-                                    <input
-                                        type="file"
-                                        accept=".html"
-                                        onChange={(e) => handleImport(e, 'html')}
-                                        disabled={importing}
-                                        className="hidden"
-                                    />
-                                    <div className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer text-left">
-                                        <FileText className="text-orange-600 flex-shrink-0" size={18} />
-                                        <div className="flex-1 min-w-0">
-                                            <p className="font-medium text-slate-900 text-sm">Import HTML</p>
-                                            <p className="text-xs text-slate-600 truncate">From browsers</p>
-                                        </div>
-                                    </div>
-                                </label>
-                            </div>
-
-                            {importing && (
-                                <div className="flex items-center justify-center gap-2 py-2 text-green-600">
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                    <span className="text-sm">Importing...</span>
-                                </div>
-                            )}
-                        </div>
+                        )}
                     </div>
 
                     {/* 提示信息 */}

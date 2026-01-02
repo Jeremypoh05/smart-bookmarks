@@ -3,6 +3,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 
+// 定义 Bookmark 类型
+interface BookmarkExport {
+  id: string;
+  title: string | null;
+  url: string;
+  description: string | null;
+  category: string | null;
+  tags: string[];
+  platform: string | null;
+  thumbnail: string | null;
+  createdAt: Date;
+}
+
+// 🔥 GET: 导出所有书签
 export async function GET(req: NextRequest) {
   try {
     const { userId } = await auth();
@@ -11,50 +25,14 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const format = searchParams.get("format") || "json"; // json, csv, html, markdown
+    const format = searchParams.get("format") || "json";
 
     const bookmarks = await prisma.bookmark.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
     });
 
-    let fileContent: string;
-    let contentType: string;
-    let filename: string;
-
-    switch (format) {
-      case "csv":
-        fileContent = exportToCSV(bookmarks);
-        contentType = "text/csv";
-        filename = `bookmarks_${new Date().toISOString().split("T")[0]}.csv`;
-        break;
-
-      case "html":
-        fileContent = exportToHTML(bookmarks);
-        contentType = "text/html";
-        filename = `bookmarks_${new Date().toISOString().split("T")[0]}.html`;
-        break;
-
-      case "markdown":
-        fileContent = exportToMarkdown(bookmarks);
-        contentType = "text/markdown";
-        filename = `bookmarks_${new Date().toISOString().split("T")[0]}.md`;
-        break;
-
-      case "json":
-      default:
-        fileContent = JSON.stringify(bookmarks, null, 2);
-        contentType = "application/json";
-        filename = `bookmarks_${new Date().toISOString().split("T")[0]}.json`;
-        break;
-    }
-
-    return new NextResponse(fileContent, {
-      headers: {
-        "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename="${filename}"`,
-      },
-    });
+    return generateExportFile(bookmarks, format);
   } catch (error) {
     console.error("Export error:", error);
     return NextResponse.json(
@@ -64,17 +42,93 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// 定义 Bookmark 类型
-interface BookmarkExport {
-  id: string;
-  title: string | null; // 允许为 null
-  url: string;
-  description: string | null;
-  category: string | null; // 允许为 null
-  tags: string[];
-  platform: string | null; // 允许为 null
-  thumbnail: string | null;
-  createdAt: Date;
+// 🔥 NEW: POST: 导出选中的书签
+export async function POST(req: NextRequest) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const { format = "json", bookmarkIds } = body;
+
+    if (
+      !bookmarkIds ||
+      !Array.isArray(bookmarkIds) ||
+      bookmarkIds.length === 0
+    ) {
+      return NextResponse.json(
+        { error: "No bookmarks selected" },
+        { status: 400 }
+      );
+    }
+
+    // 只获取用户选中的书签
+    const bookmarks = await prisma.bookmark.findMany({
+      where: {
+        userId,
+        id: { in: bookmarkIds },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (bookmarks.length === 0) {
+      return NextResponse.json(
+        { error: "No bookmarks found" },
+        { status: 404 }
+      );
+    }
+
+    return generateExportFile(bookmarks, format);
+  } catch (error) {
+    console.error("Export error:", error);
+    return NextResponse.json(
+      { error: "Failed to export bookmarks" },
+      { status: 500 }
+    );
+  }
+}
+
+// 🔥 统一的文件生成函数
+function generateExportFile(bookmarks: BookmarkExport[], format: string) {
+  let fileContent: string;
+  let contentType: string;
+  let filename: string;
+
+  switch (format) {
+    case "csv":
+      fileContent = exportToCSV(bookmarks);
+      contentType = "text/csv";
+      filename = `bookmarks_${new Date().toISOString().split("T")[0]}.csv`;
+      break;
+
+    case "html":
+      fileContent = exportToHTML(bookmarks);
+      contentType = "text/html";
+      filename = `bookmarks_${new Date().toISOString().split("T")[0]}.html`;
+      break;
+
+    case "markdown":
+      fileContent = exportToMarkdown(bookmarks);
+      contentType = "text/markdown";
+      filename = `bookmarks_${new Date().toISOString().split("T")[0]}.md`;
+      break;
+
+    case "json":
+    default:
+      fileContent = JSON.stringify(bookmarks, null, 2);
+      contentType = "application/json";
+      filename = `bookmarks_${new Date().toISOString().split("T")[0]}.json`;
+      break;
+  }
+
+  return new NextResponse(fileContent, {
+    headers: {
+      "Content-Type": contentType,
+      "Content-Disposition": `attachment; filename="${filename}"`,
+    },
+  });
 }
 
 // CSV 导出
@@ -98,7 +152,7 @@ function exportToCSV(bookmarks: BookmarkExport[]): string {
     escapeCsvField(b.description || ""),
     escapeCsvField(b.category ?? "Uncategorized"),
     Array.isArray(b.tags) ? b.tags.join(";") : "",
-    b.platform,
+    b.platform ?? "",
     b.thumbnail || "",
     b.createdAt.toISOString(),
   ]);
@@ -145,8 +199,9 @@ function exportToHTML(bookmarks: BookmarkExport[]): string {
       if (bookmark.thumbnail) {
         html += ` ICON="${escapeHtml(bookmark.thumbnail)}"`;
       }
-        html += `>${escapeHtml(bookmark.title ?? "Untitled")}</A>\n`;      if (bookmark.description) {
-        html += `        <DD>${escapeHtml(bookmark.description ?? "")}\n`;
+      html += `>${escapeHtml(bookmark.title ?? "Untitled")}</A>\n`;
+      if (bookmark.description) {
+        html += `        <DD>${escapeHtml(bookmark.description)}\n`;
       }
     });
     html += `    </DL><p>\n`;
@@ -181,16 +236,16 @@ function exportToMarkdown(bookmarks: BookmarkExport[]): string {
   for (const [category, items] of Object.entries(groupedByCategory)) {
     markdown += `## ${category}\n\n`;
     items.forEach((bookmark) => {
-      markdown += `### [${bookmark.title}](${bookmark.url})\n\n`;
+      markdown += `### [${bookmark.title ?? "Untitled"}](${bookmark.url})\n\n`;
       if (bookmark.description) {
         markdown += `${bookmark.description}\n\n`;
       }
       if (bookmark.tags && bookmark.tags.length > 0) {
         markdown += `**Tags:** ${bookmark.tags.join(", ")}\n\n`;
       }
-      markdown += `**Platform:** ${bookmark.platform} | **Saved:** ${new Date(
-        bookmark.createdAt
-      ).toLocaleDateString()}\n\n`;
+      markdown += `**Platform:** ${
+        bookmark.platform ?? "Web"
+      } | **Saved:** ${new Date(bookmark.createdAt).toLocaleDateString()}\n\n`;
       markdown += `---\n\n`;
     });
   }

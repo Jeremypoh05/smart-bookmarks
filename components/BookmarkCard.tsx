@@ -1,7 +1,8 @@
+// components/BookmarkCard.tsx
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { MoreVertical, Edit, Trash2, Share2, Loader2, Tag } from 'lucide-react';
+import { MoreVertical, Edit, Trash2, Share2, Loader2, Tag, Check } from 'lucide-react';
 import EditBookmarkModal from './EditBookmarkModal';
 
 interface BookmarkCardProps {
@@ -17,9 +18,19 @@ interface BookmarkCardProps {
         createdAt: Date;
     };
     onDelete: () => void;
+    // 🔥 NEW: 选择模式相关 props
+    selectionMode?: boolean;
+    isSelected?: boolean;
+    onSelect?: (id: string, selected: boolean) => void;
 }
 
-export default function BookmarkCard({ bookmark, onDelete }: BookmarkCardProps) {
+export default function BookmarkCard({
+    bookmark,
+    onDelete,
+    selectionMode = false,
+    isSelected = false,
+    onSelect
+}: BookmarkCardProps) {
     const [isDeleting, setIsDeleting] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [showMenu, setShowMenu] = useState(false);
@@ -89,6 +100,14 @@ export default function BookmarkCard({ bookmark, onDelete }: BookmarkCardProps) 
     };
 
     const handleCardClick = (e: React.MouseEvent) => {
+        // 🔥 NEW: 在选择模式下切换选择状态
+        if (selectionMode) {
+            if (onSelect) {
+                onSelect(bookmark.id, !isSelected);
+            }
+            return;
+        }
+
         // Don't navigate if clicking on menu button or menu items
         const target = e.target as HTMLElement;
         if (target.closest('button') || target.closest('[data-menu]')) {
@@ -110,74 +129,92 @@ export default function BookmarkCard({ bookmark, onDelete }: BookmarkCardProps) 
         <>
             <div
                 onClick={handleCardClick}
-                className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 group relative cursor-pointer"
+                className={`bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 group relative ${selectionMode ? 'cursor-pointer' : 'cursor-pointer'
+                    } ${isSelected ? 'ring-4 ring-blue-500 ring-offset-2' : ''
+                    }`}
             >
-                {/* Three-dot Menu */}
-                <div className="absolute top-3 right-3 z-20" ref={menuRef}>
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setShowMenu(!showMenu);
-                        }}
-                        className="p-2 bg-white/90 backdrop-blur-sm rounded-lg shadow-lg hover:bg-white transition-all"
-                        aria-label="More options"
-                    >
-                        <MoreVertical className="w-5 h-5 text-slate-700" />
-                    </button>
-
-                    {/* Dropdown Menu */}
-                    {showMenu && (
+                {/* 🔥 NEW: Selection Checkbox Overlay */}
+                {selectionMode && (
+                    <div className="absolute top-3 left-3 z-30">
                         <div
-                            data-menu
-                            className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-slate-200 py-2 animate-in fade-in slide-in-from-top-2 duration-200"
+                            className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center transition-all shadow-lg ${isSelected
+                                    ? 'bg-blue-600 border-blue-600'
+                                    : 'bg-white/90 backdrop-blur-sm border-slate-300 group-hover:border-blue-400'
+                                }`}
                         >
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setShowMenu(false);
-                                    setShowEditModal(true);
-                                }}
-                                className="w-full flex items-center space-x-3 px-4 py-2.5 hover:bg-slate-50 transition-colors text-left group/item"
-                                title="Edit bookmark"
-                            >
-                                <Edit className="w-4 h-4 text-slate-600 group-hover/item:text-blue-600" />
-                                <span className="text-sm text-slate-700 group-hover/item:text-blue-600 font-medium">Edit</span>
-                            </button>
-
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleShare();
-                                }}
-                                className="w-full flex items-center space-x-3 px-4 py-2.5 hover:bg-slate-50 transition-colors text-left group/item"
-                                title="Share bookmark"
-                            >
-                                <Share2 className="w-4 h-4 text-slate-600 group-hover/item:text-green-600" />
-                                <span className="text-sm text-slate-700 group-hover/item:text-green-600 font-medium">Share</span>
-                            </button>
-
-                            <div className="border-t border-slate-200 my-1" />
-
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setShowMenu(false);
-                                    handleDelete();
-                                }}
-                                disabled={isDeleting}
-                                className="w-full flex items-center space-x-3 px-4 py-2.5 hover:bg-red-50 transition-colors text-left group/item disabled:opacity-50"
-                                title="Delete bookmark"
-                            >
-                                {isDeleting ? (
-                                    <Loader2 className="w-4 h-4 text-red-600 animate-spin" />
-                                ) : (
-                                    <Trash2 className="w-4 h-4 text-slate-600 group-hover/item:text-red-600" />
-                                )}
-                                <span className="text-sm text-slate-700 group-hover/item:text-red-600 font-medium">Delete</span>
-                            </button>
+                            {isSelected && <Check className="w-5 h-5 text-white" strokeWidth={3} />}
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
+
+                {/* Three-dot Menu - 只在非选择模式显示 */}
+                {!selectionMode && (
+                    <div className="absolute top-3 right-3 z-20" ref={menuRef}>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setShowMenu(!showMenu);
+                            }}
+                            className="p-2 bg-white/90 backdrop-blur-sm rounded-lg shadow-lg hover:bg-white transition-all"
+                            aria-label="More options"
+                        >
+                            <MoreVertical className="w-5 h-5 text-slate-700" />
+                        </button>
+
+                        {/* Dropdown Menu */}
+                        {showMenu && (
+                            <div
+                                data-menu
+                                className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-slate-200 py-2 animate-in fade-in slide-in-from-top-2 duration-200"
+                            >
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setShowMenu(false);
+                                        setShowEditModal(true);
+                                    }}
+                                    className="w-full flex items-center space-x-3 px-4 py-2.5 hover:bg-slate-50 transition-colors text-left group/item"
+                                    title="Edit bookmark"
+                                >
+                                    <Edit className="w-4 h-4 text-slate-600 group-hover/item:text-blue-600" />
+                                    <span className="text-sm text-slate-700 group-hover/item:text-blue-600 font-medium">Edit</span>
+                                </button>
+
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleShare();
+                                    }}
+                                    className="w-full flex items-center space-x-3 px-4 py-2.5 hover:bg-slate-50 transition-colors text-left group/item"
+                                    title="Share bookmark"
+                                >
+                                    <Share2 className="w-4 h-4 text-slate-600 group-hover/item:text-green-600" />
+                                    <span className="text-sm text-slate-700 group-hover/item:text-green-600 font-medium">Share</span>
+                                </button>
+
+                                <div className="border-t border-slate-200 my-1" />
+
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setShowMenu(false);
+                                        handleDelete();
+                                    }}
+                                    disabled={isDeleting}
+                                    className="w-full flex items-center space-x-3 px-4 py-2.5 hover:bg-red-50 transition-colors text-left group/item disabled:opacity-50"
+                                    title="Delete bookmark"
+                                >
+                                    {isDeleting ? (
+                                        <Loader2 className="w-4 h-4 text-red-600 animate-spin" />
+                                    ) : (
+                                        <Trash2 className="w-4 h-4 text-slate-600 group-hover/item:text-red-600" />
+                                    )}
+                                    <span className="text-sm text-slate-700 group-hover/item:text-red-600 font-medium">Delete</span>
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Thumbnail */}
                 <div className="relative overflow-hidden bg-slate-100">
@@ -203,7 +240,7 @@ export default function BookmarkCard({ bookmark, onDelete }: BookmarkCardProps) 
                         </div>
                     )}
                     {bookmark.platform && (
-                        <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-sm text-white px-3 py-1 rounded-full text-xs font-medium">
+                        <div className={`absolute top-3 ${selectionMode ? 'right-3' : 'left-3'} bg-black/70 backdrop-blur-sm text-white px-3 py-1 rounded-full text-xs font-medium`}>
                             {bookmark.platform}
                         </div>
                     )}
@@ -211,7 +248,7 @@ export default function BookmarkCard({ bookmark, onDelete }: BookmarkCardProps) 
 
                 {/* Content */}
                 <div className="p-5">
-                    {/* Title - Now with more space */}
+                    {/* Title */}
                     <h3 className="font-bold text-slate-900 text-lg line-clamp-2 mb-3 pr-2">
                         {bookmark.title || '未命名书签'}
                     </h3>
@@ -236,7 +273,7 @@ export default function BookmarkCard({ bookmark, onDelete }: BookmarkCardProps) 
                         </span>
                     </div>
 
-                    {/* Tags - Show all tags (up to 4) */}
+                    {/* Tags */}
                     {bookmark.tags && bookmark.tags.length > 0 && (
                         <div className="flex flex-wrap gap-2">
                             {bookmark.tags.slice(0, 4).map((tag, idx) => (
@@ -257,8 +294,8 @@ export default function BookmarkCard({ bookmark, onDelete }: BookmarkCardProps) 
                 </div>
             </div>
 
-            {/* Edit Modal */}
-            {showEditModal && (
+            {/* Edit Modal - 只在非选择模式显示 */}
+            {!selectionMode && showEditModal && (
                 <EditBookmarkModal
                     bookmark={bookmark}
                     onClose={() => setShowEditModal(false)}
