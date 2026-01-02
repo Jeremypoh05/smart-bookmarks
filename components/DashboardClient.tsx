@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useUser, UserButton } from '@clerk/nextjs';
 import { Plus, Search, Grid, List, Sparkles, Download, Upload, CheckSquare, X, Menu } from 'lucide-react';
 import BookmarkCard from './BookmarkCard';
@@ -30,6 +31,7 @@ export default function DashboardClient() {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('全部');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+    const searchParams = useSearchParams();
 
     // 🔥 选择模式相关
     const [selectionMode, setSelectionMode] = useState(false);
@@ -66,6 +68,52 @@ export default function DashboardClient() {
             setLoading(false);
         }
     };
+
+    // 🔥 NEW: 处理从 Share Sheet 传来的数据
+    useEffect(() => {
+        const handleSharedContent = async () => {
+            const isShared = searchParams.get('share') === 'true';
+            const sharedUrl = searchParams.get('url');
+            const sharedTitle = searchParams.get('title');
+            const sharedText = searchParams.get('text');
+
+            if (isShared && sharedUrl) {
+                // 自动打开添加书签的 modal，并预填数据
+                setShowModal(true);
+
+                // 可以创建一个 state 来存储预填数据
+                // 然后传给 AddBookmarkModal
+                console.log('Shared content:', {
+                    url: sharedUrl,
+                    title: sharedTitle,
+                    text: sharedText
+                });
+
+                // 清理 URL 参数
+                window.history.replaceState({}, '', '/dashboard');
+            }
+        };
+
+        handleSharedContent();
+    }, [searchParams]);
+
+    // 🔥 NEW: 检查是否支持安装 PWA
+    useEffect(() => {
+        let deferredPrompt;
+
+        const handleBeforeInstallPrompt = (e: Event) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            // 可以显示一个 "安装应用" 的按钮
+            console.log('PWA can be installed');
+        };
+
+        window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+        return () => {
+            window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+        };
+    }, []);
 
     const stats = useMemo(() => {
         const today = new Date().toDateString();
