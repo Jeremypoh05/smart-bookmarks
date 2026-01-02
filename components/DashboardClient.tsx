@@ -500,11 +500,19 @@ export default function DashboardClient() {
             {/* Modals */}
             {showModal && (
                 <AddBookmarkModal
-                    onClose={() => setShowModal(false)}
-                    onSuccess={() => {
-                        fetchBookmarks();
+                    onClose={() => {
                         setShowModal(false);
+                        setSharedData(null); // 关闭时清理数据
                     }}
+                    onSuccess={() => {
+                        fetchBookmarks(); // 刷新列表
+                        setShowModal(false);
+                        setSharedData(null); // 成功后清理数据
+                    }}
+                    // 🔥 这里是关键：把解析出来的 sharedData 传进去
+                    initialUrl={sharedData?.url || ''}
+                    initialTitle={sharedData?.title || ''}
+                    initialDescription={sharedData?.text || ''}
                 />
             )}
 
