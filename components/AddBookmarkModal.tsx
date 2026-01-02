@@ -75,12 +75,12 @@ export default function AddBookmarkModal({
             // 2. 合并数据准备保存
             const bookmarkData = {
                 url: url.trim(),
-                title: initialTitle || metadata.title || 'Untitled',
-                description: initialDescription || metadata.description || '',
+                title: metadata.title || initialTitle || 'New Bookmark', // 优先级：抓取的 > 分享的 > 默认
+                description: metadata.description || initialDescription || '',
                 thumbnail: metadata.thumbnail || '',
                 platform: metadata.platform || 'Web',
-                category: analysis.category, // ✅ 改用分析后的结果
-                tags: analysis.tags,         // ✅ 改用分析后的结果
+                category: analysis.category,
+                tags: analysis.tags,
             };
 
             // 3. 创建书签
@@ -160,17 +160,6 @@ export default function AddBookmarkModal({
                             />
                         </div>
 
-                        {/* 预填信息预览（可选） */}
-                        {initialDescription && (
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Shared Description
-                                </label>
-                                <div className="p-3 bg-slate-50 rounded-lg text-sm text-slate-700">
-                                    {initialDescription}
-                                </div>
-                            </div>
-                        )}
 
                         {error && (
                             <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
