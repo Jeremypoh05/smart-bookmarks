@@ -2,7 +2,7 @@
   "name": "Smart Bookmarks",
   "short_name": "SmartMarks",
   "description": "AI-powered bookmark manager for all your social media content",
-  "start_url": "/dashboard",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#2563eb",
